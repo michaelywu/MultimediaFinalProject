@@ -52,14 +52,19 @@ class VideoPlayer(QMainWindow):
         super(VideoPlayer, self).__init__(parent)
         self.setWindowTitle("CSCI 576 Interactive Video Player")
         #contains the list of RGB files
-        self.rgb_files = []
+        self.rgb_files = {}
         self.image_idx = 0
         self.ibc = ImageByteConverter.ImageByteConverter()
         self.imageWidth = 352
         self.imageHeight = 288
         self.directory = ''
         #contains a name of WAV file
-        self.wav_file = ''
+        self.wav_files = {}
+        self.linkDict = {}
+        self.videoID = []
+        self.activeVideoID = 0
+        # key is video ID -> frame number -> 2D list
+        #[x1,y1,xLength,yLength, vid_dest, vid_dest start frame#]
         self.imageIdx = 0
         self.isPlaying = False
         self.videoLoaded = False
@@ -86,7 +91,10 @@ class VideoPlayer(QMainWindow):
         #self.errorLabel = QLabel()
         #self.errorLabel.setSizePolicy(QSizePolicy.Preferred,
         #        QSizePolicy.Maximum)
-
+        #self.parseJson("test.json")
+        #print(self.linkDict)
+        #print(self.wav_files)
+        #print(self.rgb_files)
         #open video action
         #need a space in the beginning to show up in the menu bar
         openAction = QAction( ' &Open Directory', self)
@@ -146,7 +154,7 @@ class VideoPlayer(QMainWindow):
         #Check the current video's links
         #iterate through the links to determine if any of them should be written
         #updates the image
-        self.displayImage('{}/{}'.format(self.directory,self.rgb_files[self.imageIdx]),0,0,50,50)
+        self.displayImage(self.rgb_files[self.activeVideoID][self.imageIdx])
         self.imageIdx += 1
         if self.imageIdx >= 9000:
             self.imageIdx = 0
@@ -166,20 +174,22 @@ class VideoPlayer(QMainWindow):
         #print(metadata_file[0])
         rgb_fail = False
         wav_fail = False
-
-        self.content = self.metadata.readMetadata(metadata_file[0])
+        parseStatus=self.parseJson(metadata_file[0])
         dir = self.content['videos']["0"]
+        '''
         if os.path.isdir(dir):
             rgb_fail , self.rgb_files = self.getRGBFiles(dir)
             wav_fail , self.wav_file = self.getWAVFile(dir)
             self.directory = dir
             #the wave file is now the full absolute path
             self.wav_file = os.path.abspath('{}/{}'.format(dir,self.wav_file))
-        if rgb_fail == True and wav_fail == True:
+        '''
+        if parseStatus == True:
             self.imageIdx = 0
+            self.activeVideoID = self.videoID[0]
             #directory is valid
             #let the button be activated
-            first_file = '{}/{}'.format(dir,self.rgb_files[0])
+            first_file = self.rgb_files[self.activeVideoID][0]
             self.displayImage(first_file)
             self.updater.start()
 
@@ -189,20 +199,60 @@ class VideoPlayer(QMainWindow):
             #play the sound
             #self.sound.play(self.wav_file)
             #QSound.play(self.wav_file)
-            self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(self.wav_file)))
+            self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(self.wav_files[self.activeVideoID])))
             self.mediaPlayer.setVolume(100)
             self.mediaPlayer.play()
 
             self.isPlaying = True
             self.videoLoaded = True
         else:
-            #directory is not valid
-            #leave it inactive
-            #disable the buttons
+            #parse did not occur properly
             self.pauseButton.setEnabled(False)
             self.playButton.setEnabled(False)
             self.isPlaying = False
             self.videoLoaded = False
+    def parseJson(self,path):
+        #parse the json input into more convenient data structures
+        self.content = self.metadata.readMetadata(path)
+        #frameDict: key : videoID->frame_number->2d list
+        # returns x1,y1,xLength,yLength,Dest,destFrame#
+        if 'videos' in self.content and 'links' in self.content:
+            #run checks to make sure everything the input is valid
+            #check 'videos' make sure all the keys are valid ints
+            for key in self.content['videos'].keys():
+                self.videoID.append(key)
+            self.videoID.sort()
+            #check 'videos' to see the return are valid directories
+            for key in self.videoID:
+                if not os.path.isdir(self.content['videos'][key]):
+                    print("VideoPlayer.py: parseJson() Invalid path in videos.")
+                    return False
+                #load the rgb files and wav files
+                rgb_fail , self.rgb_files[key] = self.getRGBFiles(self.content['videos'][key])
+                wav_fail , self.wav_files[key] = self.getWAVFile(self.content['videos'][key])
+                if rgb_fail == False or wav_fail == False:
+                    print("VideoPlayer.py: parseJson() unable to retrieve rgv or wav files")
+                    return False
+                self.linkDict[key] = {}
+
+            for key in self.content['links'].keys():
+                links = self.content['links'][key]
+                #2d list
+                #[x1,y1,xLength,yLength,start frame #, end frame #, vid_dest, vid_dest start frame#]
+                for link in links:
+                    if len(link) != 8:
+                        print("VideoPlayer.py: parseJson() link list is not compliant.")
+                        return False
+                    startFrame = link[4]
+                    endFrame = link[5]
+                    for frameNum in range(startFrame,endFrame+1):
+                        if frameNum not in self.linkDict[key]:
+                            self.linkDict[key][frameNum] = []
+                        self.linkDict[key][frameNum].append([link[0],link[1],link[2],link[3],str(link[6]),link[7]])
+        else:
+            print("VideoPlayer.py: parseJson() INVALID JSON FILE.")
+            return False
+        return True
     def getRGBFiles(self, path):
         #given the path it will get the list of RGB files in order
         # return bool, list
@@ -210,7 +260,7 @@ class VideoPlayer(QMainWindow):
         pass_fail = False
         for file in os.listdir(path):
             if file.endswith(".rgb") or file.endswith(".RGB"):
-                files.append(file)
+                files.append("{}/{}".format(path,file))
         if len(files) > 0:
             pass_fail = True
         else:
@@ -224,7 +274,7 @@ class VideoPlayer(QMainWindow):
         pass_fail = False
         for file in os.listdir(path):
             if file.endswith(".wav") or file.endswith(".WAV"):
-                wav_file = file
+                wav_file = "{}/{}".format(path,file)
         if wav_file != '':
             pass_fail = True
         else:

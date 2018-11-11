@@ -14,7 +14,7 @@ Metadata
     'links' -
             key = some index N
             return = 2D list
-                [x1,y1,x2,y2,start frame #, end frame #, vid_dest, vid_dest start frame#]
+                [x1,y1,xLength,yLength,start frame #, end frame #, vid_dest, vid_dest start frame#]
 
 *****************************************************************************'''
 import numpy as np

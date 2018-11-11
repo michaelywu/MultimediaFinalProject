@@ -22,7 +22,7 @@ Goals
  1. Display the images DONE!
  2. Output sound DONE!
  3. Get the play and pause button working DONE!
- 4. Work on metadata parser (class that will work for both applications)
+ 4. Work on metadata parser (class that will work for both applications) DONE!
  5. Display the link
  6. Work on logic to move between videos
 *****************************************************************************'''
@@ -34,12 +34,13 @@ from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel,
         QPushButton, QSizePolicy, QSlider, QStyle, QVBoxLayout, QWidget)
 from PyQt5.QtWidgets import QMainWindow,QWidget, QPushButton, QAction
-from PyQt5.QtGui import QIcon, QPixmap, QImage
+from PyQt5.QtGui import QIcon, QPixmap, QImage, QPainter,QPen
 import sys
 import os
 import numpy as np
 import array
 import ImageByteConverter
+import MetadataParser
 '''*****************************************************************************
 Class: VideoPlayer
 Inherits from QMainWindow
@@ -64,7 +65,7 @@ class VideoPlayer(QMainWindow):
         self.videoLoaded = False
         #mediaPlayer object to play sound
         self.mediaPlayer = QMediaPlayer()
-
+        self.metadata = MetadataParser.MetadataParser()
         #videoWidget = QVideoWidget()
 
         #Play button
@@ -82,9 +83,9 @@ class VideoPlayer(QMainWindow):
         #self.positionSlider.setRange(0, 0)
         #self.positionSlider.sliderMoved.connect(self.setPosition)
 
-        self.errorLabel = QLabel()
-        self.errorLabel.setSizePolicy(QSizePolicy.Preferred,
-                QSizePolicy.Maximum)
+        #self.errorLabel = QLabel()
+        #self.errorLabel.setSizePolicy(QSizePolicy.Preferred,
+        #        QSizePolicy.Maximum)
 
         #open video action
         #need a space in the beginning to show up in the menu bar
@@ -114,7 +115,7 @@ class VideoPlayer(QMainWindow):
         #self.imagePixmap = QPixmap()
         #label.setPixmap(pixmap)
         self.imageLabel.resize(self.imageWidth,self.imageHeight)
-
+        self.imageLabel.mousePressEvent = self.mousePress
         #setup the timer
         self.updater = QTimer()
         self.updater.setSingleShot(True)
@@ -142,20 +143,32 @@ class VideoPlayer(QMainWindow):
         self.show()
 
     def update(self):
+        #Check the current video's links
+        #iterate through the links to determine if any of them should be written
         #updates the image
-        self.displayImage('{}/{}'.format(self.directory,self.rgb_files[self.imageIdx]))
+        self.displayImage('{}/{}'.format(self.directory,self.rgb_files[self.imageIdx]),0,0,50,50)
         self.imageIdx += 1
         if self.imageIdx >= 9000:
             self.imageIdx = 0
         self.updater.start()
 
+    def mousePress(self, QMouseEvent):
+        # Pressing the mouse
+        print("{},{}".format(QMouseEvent.x(),QMouseEvent.y()))
+        #check the metadata contents
+        #if the current image index has a hyperlink
+        #and the mouse event clicked is within the parameter
+        #switch to the next one
     def openDirectory(self):
         #opens a directory containing the rgb files
         #for testing purposes ONLY
-        dir = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
+        metadata_file = QFileDialog.getOpenFileName(self, "Select Metadata","*.json")
+        #print(metadata_file[0])
         rgb_fail = False
         wav_fail = False
-        #when directory is opened
+
+        self.content = self.metadata.readMetadata(metadata_file[0])
+        dir = self.content['videos']["0"]
         if os.path.isdir(dir):
             rgb_fail , self.rgb_files = self.getRGBFiles(dir)
             wav_fail , self.wav_file = self.getWAVFile(dir)
@@ -219,10 +232,22 @@ class VideoPlayer(QMainWindow):
 
         return pass_fail,wav_file
 
-    def displayImage(self,path):
+    def displayImage(self,path,x1=None,y1=None,xLength=None,yLength=None):
         #given the path, display the image onto the label
         qim = QImage(self.ibc.convert(path),self.imageWidth,self.imageHeight,QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(qim)
+        if(x1 != None or y1 != None or xLength != None or yLength != None):
+            # create painter instance with pixmap
+            painterInstance = QPainter(pixmap)
+
+            # set rectangle color and thickness
+            penRectangle = QPen(Qt.white)
+            #penRedBorder.setWidth(3)
+
+            # draw rectangle on painter
+            painterInstance.setPen(penRectangle)
+            painterInstance.drawRect(x1,y1,xLength,yLength)
+            painterInstance.end()
         self.imageLabel.setPixmap(pixmap)
         self.imageLabel.show()
 

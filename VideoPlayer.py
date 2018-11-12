@@ -23,17 +23,21 @@ Goals
  2. Output sound DONE!
  3. Get the play and pause button working DONE!
  4. Work on metadata parser (class that will work for both applications) DONE!
- 5. Display the link
- 6. Work on logic to move between videos
+ 5. Display the link DONE!
+ 6. Work on logic to move between videos DONE!
+
+ TODO:
+ 1. Add a position slider for the video
+ 2. Add a sound slider for the video
 *****************************************************************************'''
 from PIL import Image
 from PIL.ImageQt import ImageQt
-from PyQt5.QtCore import QDir, Qt, QUrl, QByteArray, QTimer
+from PyQt5.QtCore import QDir, Qt, QUrl, QByteArray, QTimer, QRect
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer, QSound
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel,
         QPushButton, QSizePolicy, QSlider, QStyle, QVBoxLayout, QWidget)
-from PyQt5.QtWidgets import QMainWindow,QWidget, QPushButton, QAction
+from PyQt5.QtWidgets import QMainWindow,QWidget, QPushButton, QAction, QFrame
 from PyQt5.QtGui import QIcon, QPixmap, QImage, QPainter,QPen
 import sys
 import os
@@ -97,11 +101,11 @@ class VideoPlayer(QMainWindow):
         #print(self.rgb_files)
         #open video action
         #need a space in the beginning to show up in the menu bar
-        openAction = QAction( ' &Open Directory', self)
+        openAction = QAction( ' &Open File', self)
         openAction.setShortcut('Ctrl+O')
-        openAction.setStatusTip('Open Directory')
+        openAction.setStatusTip('Open File')
         #the call back function when triggered
-        openAction.triggered.connect(self.openDirectory)
+        openAction.triggered.connect(self.openJson)
 
         #exit action
         exitAction = QAction(' &Exit', self)
@@ -119,11 +123,15 @@ class VideoPlayer(QMainWindow):
         fileMenu.addAction(openAction)
         fileMenu.addAction(exitAction)
 
+        #Image label
         self.imageLabel = QLabel(self)
-        #self.imagePixmap = QPixmap()
-        #label.setPixmap(pixmap)
-        self.imageLabel.resize(self.imageWidth,self.imageHeight)
         self.imageLabel.mousePressEvent = self.mousePress
+        self.imageLabel.setFrameShape(QFrame.Panel)
+        self.imageLabel.setLineWidth(1)
+        self.imageLabel.setSizePolicy( QSizePolicy.Fixed, QSizePolicy.Fixed )
+        self.imageLabel.setMinimumHeight(self.imageHeight)
+        self.imageLabel.setMinimumWidth(self.imageWidth)
+
         #setup the timer
         self.updater = QTimer()
         self.updater.setSingleShot(True)
@@ -141,7 +149,7 @@ class VideoPlayer(QMainWindow):
         self.mainLayout.addWidget(self.imageLabel)
         self.controlLayout.addWidget(self.playButton)
         self.controlLayout.addWidget(self.pauseButton)
-
+        self.mainLayout.setAlignment(Qt.AlignCenter)
         self.mainLayout.addLayout(self.controlLayout)
 
         self.window.setLayout(self.mainLayout)
@@ -154,7 +162,19 @@ class VideoPlayer(QMainWindow):
         #Check the current video's links
         #iterate through the links to determine if any of them should be written
         #updates the image
-        self.displayImage(self.rgb_files[self.activeVideoID][self.imageIdx])
+        xCoord = []
+        yCoord = []
+        xLength = []
+        yLength = []
+        #check if the fram number is in the linkDict
+        if self.imageIdx in self.linkDict[self.activeVideoID]:
+            #the frame has a link(s)!
+            for link in self.linkDict[self.activeVideoID][self.imageIdx]:
+                xCoord.append(link[0])
+                yCoord.append(link[1])
+                xLength.append(link[2])
+                yLength.append(link[3])
+        self.displayImage(self.rgb_files[self.activeVideoID][self.imageIdx],xCoord,yCoord,xLength,yLength)
         self.imageIdx += 1
         if self.imageIdx >= 9000:
             self.imageIdx = 0
@@ -162,28 +182,48 @@ class VideoPlayer(QMainWindow):
 
     def mousePress(self, QMouseEvent):
         # Pressing the mouse
-        print("{},{}".format(QMouseEvent.x(),QMouseEvent.y()))
+        xClick = QMouseEvent.x()
+        yClick = QMouseEvent.y()
+        #print("{},{}".format(QMouseEvent.x(),QMouseEvent.y()))
         #check the metadata contents
         #if the current image index has a hyperlink
         #and the mouse event clicked is within the parameter
         #switch to the next one
-    def openDirectory(self):
-        #opens a directory containing the rgb files
-        #for testing purposes ONLY
+        #check if the frame number is in the linkDict
+        #[x1,y1,xLength,yLength, vid_dest, vid_dest start frame#]
+        if self.imageWidth < xClick or self.imageHeight < yClick or xClick < 0 or yClick < 0:
+            return
+        if self.isPlaying and self.videoLoaded:
+            if self.imageIdx in self.linkDict[self.activeVideoID]:
+                for link in self.linkDict[self.activeVideoID][self.imageIdx]:
+                    #check if the click is within the link
+                    #make the transistion
+                    x = link[0]
+                    y = link[1]
+                    xLen = link[2]
+                    yLen = link[3]
+                    if (x <= xClick) and xClick <= (x+xLen) and y <= yClick and yClick <= (y+yLen):
+                        #the click was within the link
+                        if str(link[4]) in self.videoID:
+                            self.activeVideoID = str(link[4])
+                            self.imageIdx = link[5]
+                            self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(self.wav_files[self.activeVideoID])))
+                            self.mediaPlayer.setVolume(100)
+                            #video is 30 fps
+                            # image idx is frame+1
+                            pos = int(((self.imageIdx +1) / 30.0) * 1000)
+                            self.mediaPlayer.setPosition(pos)
+                            self.mediaPlayer.play()
+                        else:
+                            print("mousePress() error! video ID is invalid.")
+    def openJson(self):
+        #opens the json file
+        #get the file
         metadata_file = QFileDialog.getOpenFileName(self, "Select Metadata","*.json")
-        #print(metadata_file[0])
-        rgb_fail = False
-        wav_fail = False
+
+        #parse the json file
         parseStatus=self.parseJson(metadata_file[0])
-        dir = self.content['videos']["0"]
-        '''
-        if os.path.isdir(dir):
-            rgb_fail , self.rgb_files = self.getRGBFiles(dir)
-            wav_fail , self.wav_file = self.getWAVFile(dir)
-            self.directory = dir
-            #the wave file is now the full absolute path
-            self.wav_file = os.path.abspath('{}/{}'.format(dir,self.wav_file))
-        '''
+
         if parseStatus == True:
             self.imageIdx = 0
             self.activeVideoID = self.videoID[0]
@@ -197,8 +237,6 @@ class VideoPlayer(QMainWindow):
             self.pauseButton.setEnabled(True)
             self.playButton.setEnabled(True)
             #play the sound
-            #self.sound.play(self.wav_file)
-            #QSound.play(self.wav_file)
             self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(self.wav_files[self.activeVideoID])))
             self.mediaPlayer.setVolume(100)
             self.mediaPlayer.play()
@@ -287,18 +325,17 @@ class VideoPlayer(QMainWindow):
         qim = QImage(self.ibc.convert(path),self.imageWidth,self.imageHeight,QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(qim)
         if(x1 != None or y1 != None or xLength != None or yLength != None):
-            # create painter instance with pixmap
-            painterInstance = QPainter(pixmap)
-
-            # set rectangle color and thickness
-            penRectangle = QPen(Qt.white)
-            #penRedBorder.setWidth(3)
-
-            # draw rectangle on painter
-            painterInstance.setPen(penRectangle)
-            painterInstance.drawRect(x1,y1,xLength,yLength)
-            painterInstance.end()
+            for idx in range(len(x1)):
+                # create painter instance with pixmap
+                painterInstance = QPainter(pixmap)
+                # set rectangle color and thickness
+                penRectangle = QPen(Qt.white)
+                # draw rectangle on painter
+                painterInstance.setPen(penRectangle)
+                painterInstance.drawRect(x1[idx],y1[idx],xLength[idx],yLength[idx])
+                painterInstance.end()
         self.imageLabel.setPixmap(pixmap)
+        self.imageLabel.resize(self.imageWidth,self.imageHeight)
         self.imageLabel.show()
 
     def exitCall(self):
@@ -319,30 +356,10 @@ class VideoPlayer(QMainWindow):
             self.mediaPlayer.pause()
             self.isPlaying = False
 
-    def mediaStateChanged(self, state):
-        if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
-            self.playButton.setIcon(
-                    self.style().standardIcon(QStyle.SP_MediaPause))
-        else:
-            self.playButton.setIcon(
-                    self.style().standardIcon(QStyle.SP_MediaPlay))
-
-    def positionChanged(self, position):
-        self.positionSlider.setValue(position)
-
-    def durationChanged(self, duration):
-        self.positionSlider.setRange(0, duration)
-
-    def setPosition(self, position):
-        self.mediaPlayer.setPosition(position)
-
-    def handleError(self):
-        self.playButton.setEnabled(False)
-        self.errorLabel.setText("Error: " + self.mediaPlayer.errorString())
-
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     player = VideoPlayer()
     player.resize(400, 400)
+    player.setFixedSize(player.size())
     player.show()
     sys.exit(app.exec_())

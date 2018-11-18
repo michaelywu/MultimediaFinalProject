@@ -15,20 +15,20 @@ corresponding slider will be active when loaded correctly.
 -Import destination video: filedialog will pop up looking to give a directory.
 The corressponding slider will be active when loaded correctly.
 -Create a hyperlink:
-    -At the source frame, a default bounding box is created. Where the user
-    can move around the box or change the size
     -Frame length number
 -Define link:
-    -Will only be active when a link is selected. This will attach the link
-    to a destination video.
+    -Check if there is a valid frame length
+    -Check if there is a source video and dest video
+    -Load into data structure
+    -
 -Save file: Save it into a json file
 Status:
 -List the links created.
 
 Phase 1:
-Create all the widgets
-Load the videos
-Make slider work
+Create all the widgets DONE!
+Load the videos DONE!
+Make slider work DONE!
 
 Phase 2:
 Create a hyperlink
@@ -40,19 +40,94 @@ Save file
 *****************************************************************************'''
 from PIL import Image
 from PIL.ImageQt import ImageQt
-from PyQt5.QtCore import QDir, Qt, QUrl, QByteArray, QTimer, QRect
+from PyQt5.QtCore import QDir, Qt, QUrl, QByteArray, QTimer, QRect,QPoint
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer, QSound
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel,
-        QPushButton, QSizePolicy, QSlider, QStyle, QVBoxLayout, QWidget)
+        QPushButton, QSizePolicy, QSlider, QStyle, QVBoxLayout, QWidget, QLineEdit)
 from PyQt5.QtWidgets import QMainWindow,QWidget, QPushButton, QAction, QFrame
-from PyQt5.QtGui import QIcon, QPixmap, QImage, QPainter,QPen
+from PyQt5.QtGui import QIcon, QPixmap, QImage, QPainter,QPen, QBrush, QColor
 import sys
 import os
 import numpy as np
 import array
 import ImageByteConverter
 import MetadataParser
+
+C_WIDTH = 352
+C_LENGTH = 288
+'''*****************************************************************************
+Class: LinkWidget
+Inherits from QWidget
+
+*****************************************************************************'''
+class HyperlinkLabel(QLabel):
+    def __init__(self,parent=None):
+        super().__init__(parent)
+        #self.setGeometry(int((C_WIDTH/2.0)-15),int((C_LENGTH/2.0)-15),30,30)
+        self.begin = QPoint()
+        self.end = QPoint()
+        self.link = False
+        self.parent = parent
+        self.initialX = 0
+        self.initialY = 0
+        self.xLength = 0
+        self.yLength = 0
+        self.path = None
+        self.ibc = ImageByteConverter.ImageByteConverter()
+        self.drawRect = False
+        #self.qp = QPainter(self)
+    def setPath(self,path):
+        self.path = path
+    def setLink(self,link = True):
+        self.link = link
+
+    def paintEvent(self, event):
+        if self.path != None:
+            #qim = QImage(self.ibc.convert(self.path),352,288,QImage.Format_RGB888)
+            qim = QImage(self.ibc.convert(self.path),self.parent.imageWidth,self.parent.imageHeight,QImage.Format_RGB888)
+            pixmap = QPixmap.fromImage(qim)
+
+            #qp = QPainter(self)
+            qp = QPainter(self)
+            qp.drawPixmap(self.rect(), pixmap)
+            br = QBrush(QColor(255, 255, 255, 40))
+            qp.setBrush(br)
+            qp.drawRect(QRect(self.begin, self.end))
+
+    def clearLink(self):
+        self.begin = QPoint()
+        self.end = QPoint()
+
+    def mousePressEvent(self, event):
+        if self.link:
+            self.begin = event.pos()
+            self.end = event.pos()
+            #save the initial click coord
+            self.initialX = event.x()
+            self.initialY = event.y()
+            print("X {} Y {}".format(self.initialX,self.initialY))
+            self.update()
+
+    def mouseMoveEvent(self, event):
+        if self.link:
+            self.end = event.pos()
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        if self.link:
+            #self.begin = event.pos()
+            self.end = event.pos()
+            #save the release click coord. Calculate the coord
+            self.xLength = event.x() - self.initialX
+            self.yLength = event.y() - self.initialY
+            print("Release X {} Y {}".format(self.xLength,self.yLength))
+            self.parent.updateLink()
+            self.update()
+    def setPosition(self,x,y,xLength,yLength):
+        self.begin = QPoint(x,y)
+        self.end = QPoint(x+xLength,y+yLength)
+        self.update()
 '''*****************************************************************************
 Class: VideoEditor
 Inherits from QMainWindow
@@ -69,18 +144,9 @@ class VideoEditor(QMainWindow):
         self.src_image_idx = 0
         self.dest_image_idx = 0
         self.ibc = ImageByteConverter.ImageByteConverter()
-        self.imageWidth = 352
-        self.imageHeight = 288
-        self.directory = ''
-        #contains a name of WAV file
-        self.linkDict = {}
-        self.videoID = []
-        self.activeVideoID = 0
-        # key is video ID -> frame number -> 2D list
-        #[x1,y1,xLength,yLength, vid_dest, vid_dest start frame#]
-        self.imageIdx = 0
-        self.isPlaying = False
-        self.videoLoaded = False
+        self.imageWidth = C_WIDTH
+        self.imageHeight = C_LENGTH
+        self.linkCreationActive = False
 
         self.metadata = MetadataParser.MetadataParser()
 
@@ -121,8 +187,14 @@ class VideoEditor(QMainWindow):
         fileMenu.addAction(destAction)
         fileMenu.addAction(exitAction)
 
+        #frame number labels
+        self.srcImageIndexLabel = QLabel()
+        self.destImageIndexLabel = QLabel()
+        self.srcImageIndexLabel.setText("Frame:")
+        self.destImageIndexLabel.setText("Frame:")
         #Source image label
-        self.srcImageLabel = QLabel(self)
+        #self.srcImageLabel = QLabel(self)
+        self.srcImageLabel = HyperlinkLabel(self)
         #self.srcImageLabel.mousePressEvent = self.mousePress
         self.srcImageLabel.setFrameShape(QFrame.Panel)
         self.srcImageLabel.setLineWidth(1)
@@ -132,51 +204,117 @@ class VideoEditor(QMainWindow):
 
         #Destination image label
         self.destImageLabel = QLabel(self)
-        #self.destImageLabel.mousePressEvent = self.mousePress
         self.destImageLabel.setFrameShape(QFrame.Panel)
         self.destImageLabel.setLineWidth(1)
         self.destImageLabel.setSizePolicy( QSizePolicy.Fixed, QSizePolicy.Fixed )
         self.destImageLabel.setMinimumHeight(self.imageHeight)
         self.destImageLabel.setMinimumWidth(self.imageWidth)
 
+        #button objects
+        self.createLinkButton = QPushButton('Create Hyperlink', self)
+        self.createLinkButton.clicked.connect(self.createLinkClicked)
+        self.defineLinkButton = QPushButton('Set Hyperlink', self)
+        self.saveButton = QPushButton('Save File', self)
+        self.createLinkButton.setEnabled(False)
+        self.defineLinkButton.setEnabled(False)
+        self.saveButton.setEnabled(False)
+
+        #frame length length
+        self.frameLengthLabel = QLabel()
+        self.frameLengthLabel.setText("Frame Length:")
+        self.frameLength = QLineEdit(self)
+
         self.window = QWidget()
 
-        #This will place the video source on the top
-        #while placing the play and pause button on the bottom
-        self.mainLayout = QVBoxLayout()
-        self.displayLayout = QHBoxLayout()
-        self.sliderLayout = QHBoxLayout()
-        #self.controlLayout = QHBoxLayout()
-        #controlLayout.setContentsMargins(0, 0, 0, 0)
-        self.displayLayout.addWidget(self.srcImageLabel)
-        self.displayLayout.addWidget(self.destImageLabel)
-        self.displayLayout.setAlignment(Qt.AlignCenter)
-        self.sliderLayout.addWidget(self.srcPositionSlider)
-        self.sliderLayout.addWidget(self.destPositionSlider)
-        #self.controlLayout.addWidget(self.playButton)
-        #self.controlLayout.addWidget(self.pauseButton)
+        self.mainLayout = QHBoxLayout()
+        self.srcLayout = QVBoxLayout()
+        self.destLayout = QVBoxLayout()
+        self.srcButtonLayout = QHBoxLayout()
+        self.destButtonLayout = QHBoxLayout()
+
+        self.srcButtonLayout.addWidget(self.createLinkButton)
+        self.srcButtonLayout.addWidget(self.frameLengthLabel)
+        self.srcButtonLayout.addWidget(self.frameLength)
+
+        self.destButtonLayout.addWidget(self.defineLinkButton)
+        self.destButtonLayout.addWidget(self.saveButton)
+
+        self.destLayout.addLayout(self.destButtonLayout)
+        self.srcLayout.addLayout(self.srcButtonLayout)
+
+        self.srcLayout.addWidget(self.srcImageLabel)
+        self.destLayout.addWidget(self.destImageLabel)
+
+        self.srcLayout.addWidget(self.srcPositionSlider)
+        self.destLayout.addWidget(self.destPositionSlider)
+
+        self.srcLayout.addWidget(self.srcImageIndexLabel)
+        self.destLayout.addWidget(self.destImageIndexLabel)
+
+        self.srcLayout.setAlignment(Qt.AlignCenter)
+        self.destLayout.setAlignment(Qt.AlignCenter)
         self.mainLayout.setAlignment(Qt.AlignCenter)
-        self.mainLayout.addLayout(self.displayLayout)
-        self.mainLayout.addLayout(self.sliderLayout)
+
+        self.mainLayout.addLayout(self.srcLayout)
+        self.mainLayout.addLayout(self.destLayout)
         self.window.setLayout(self.mainLayout)
-        #self.window.show()
 
         self.setCentralWidget(self.window)
         self.show()
 
+    def createLinkClicked(self):
+        print("createLinkClicked() entered")
+        # When create button is clicked
+        # Disable other widgets
+        # Read frame length
+        # Update positional slider
+        # Create a dictionary key = frameIdx returns (x,y,xLength,yLength)
+        #
+        #
+        # Change link button to turn off link creator mode
 
+        #check frameLength number and make sure it is a valid int
+        frameNum = self.frameLength.text()
+        try:
+            frameNum = int(frameNum)
+        except:
+            print("Invalid frame length value.")
+            return
+        if self.linkCreationActive == False:
+            self.createLinkButton.setText('Exit Hyperlink Mode')
+            self.frameLength.setEnabled(False)
+            self.linkCreationActive = True
+            self.srcImageLabel.setPosition(int((C_WIDTH/2.0)-15),int((C_LENGTH/2.0)-15),30,30)
+            self.srcImageLabel.setLink(True)
+        else:
+            #if hyperlink mode on,
+            self.createLinkButton.setText('Create Hyperlink')
+            self.frameLength.setEnabled(True)
+            self.linkCreationActive = False
+            self.srcImageLabel.setPosition(0,0,0,0)
+            self.srcImageLabel.setLink(False)
+            self.srcImageLabel.clearLink()
+    def updateLink(self):
+        # This is called by the HyperlinkLabel class
+        # When the mouse is released, save the frame idx
+        # save the x,y,xLength,yLength from the class
+        # Update the link dictionary
+        #
+        print("updateLink() entered")
     def setSrcPosition(self):
         #print("setSrcPosition() called")
         #print(self.srcPositionSlider.value())
         self.src_image_idx = self.srcPositionSlider.value()
         if (self.src_image_idx <len(self.src_rgb_files)):
             self.displaySrcImage(self.src_rgb_files[self.src_image_idx])
+            self.srcImageIndexLabel.setText("Frame: {}".format(self.src_image_idx+1))
 
     def setDestPosition(self):
         #print("setDestPosition() called")
         self.dest_image_idx = self.destPositionSlider.value()
         if (self.dest_image_idx <len(self.dest_rgb_files)):
             self.displayDestImage(self.dest_rgb_files[self.dest_image_idx])
+            self.destImageIndexLabel.setText("Frame: {}".format(self.dest_image_idx+1))
 
     def openSourceVideo(self):
         #print("openSourceVideo() called")
@@ -188,10 +326,13 @@ class VideoEditor(QMainWindow):
             #load the first image
             self.displaySrcImage(self.src_rgb_files[0])
             self.src_image_idx = 0
+            self.srcImageIndexLabel.setText("Frame: {}".format(self.src_image_idx+1))
+            self.createLinkButton.setEnabled(True)
         else:
             self.src_image_idx = 0
             self.srcPositionSlider.setRange(0, 0)
-
+            self.srcImageIndexLabel.setText("Frame:")
+            self.createLinkButton.setEnabled(False)
     def openDestinationVideo(self):
         #print("openDestinationVideo() called")
         file = str(QFileDialog.getExistingDirectory(self, "Select Destination Video Directory"))
@@ -201,16 +342,20 @@ class VideoEditor(QMainWindow):
             self.destPositionSlider.setRange(0, len(self.dest_rgb_files)-1)
             self.displayDestImage(self.dest_rgb_files[0])
             self.dest_image_idx = 0
+            self.destImageIndexLabel.setText("Frame: {}".format(self.dest_image_idx+1))
         else:
             self.destPositionSlider.setRange(0, 0)
             self.dest_image_idx = 0
+            self.destImageIndexLabel.setText("Frame:")
 
     def displaySrcImage(self,path):
         #given the path, display the image onto the label
-        qim = QImage(self.ibc.convert(path),self.imageWidth,self.imageHeight,QImage.Format_RGB888)
-        pixmap = QPixmap.fromImage(qim)
-        self.srcImageLabel.setPixmap(pixmap)
+        #qim = QImage(self.ibc.convert(path),self.imageWidth,self.imageHeight,QImage.Format_RGB888)
+        #pixmap = QPixmap.fromImage(qim)
+        #self.srcImageLabel.setPixmap(pixmap)
         #self.srcImageLabel.resize(self.imageWidth,self.imageHeight)
+        self.srcImageLabel.setPath(path)
+        self.srcImageLabel.update()
         self.srcImageLabel.show()
 
     def displayDestImage(self,path):

@@ -26,9 +26,18 @@ class MetadataParser:
         self.metadata['videos'] = {}
         self.metadata['links'] = {}
         self.index = 0
+    def resetMetadata(self):
+        self.metadata = {}
+        self.metadata['videos'] = {}
+        self.metadata['links'] = {}
+        
     def addVideo(self,path):
         #directory to a path containing the video and audio sources
         abs_path = os.path.abspath(path)
+        #check if the video idx already exists
+        for video in self.metadata['videos'].keys():
+            if self.metadata['videos'][video] == abs_path:
+                return
         if os.path.isdir(abs_path):
             self.metadata['videos'][self.index] = abs_path
             if self.index not in self.metadata['links']:
@@ -42,6 +51,12 @@ class MetadataParser:
             self.metadata['videos'].pop(idx)
             #check all the links and see if the vid_dest is pointing there
             #remove those links
+    def getIdx(self,path):
+        abs_path = os.path.abspath(path)
+        for video in self.metadata['videos'].keys():
+            if self.metadata['videos'][video] == abs_path:
+                return video
+        return None
     def addLink(self,idx,linkContent):
         #given the idx of the video and the link content
         #if idx not in self.links:

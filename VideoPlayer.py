@@ -45,6 +45,7 @@ import numpy as np
 import array
 import ImageByteConverter
 import MetadataParser
+import time
 '''*****************************************************************************
 Class: VideoPlayer
 Inherits from QMainWindow
@@ -162,6 +163,7 @@ class VideoPlayer(QMainWindow):
         #Check the current video's links
         #iterate through the links to determine if any of them should be written
         #updates the image
+        start = time.time()
         xCoord = []
         yCoord = []
         xLength = []
@@ -178,6 +180,9 @@ class VideoPlayer(QMainWindow):
         self.imageIdx += 1
         if self.imageIdx >= 9000:
             self.imageIdx = 0
+        end = time.time()
+
+        self.updater.setInterval(33-int((end-start)*1000))
         self.updater.start()
 
     def mousePress(self, QMouseEvent):

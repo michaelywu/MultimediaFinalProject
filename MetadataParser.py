@@ -30,7 +30,7 @@ class MetadataParser:
         self.metadata = {}
         self.metadata['videos'] = {}
         self.metadata['links'] = {}
-        
+
     def addVideo(self,path):
         #directory to a path containing the video and audio sources
         abs_path = os.path.abspath(path)
@@ -65,6 +65,20 @@ class MetadataParser:
             self.metadata['links'][idx].append(linkContent)
         else:
             print("MetadataParser: addLink() unable to add the link.")
+    def deleteLink(self,idx,linkContent):
+        #deletes the link in the metadata
+        if idx in self.metadata['videos'] and idx in self.metadata['links']:
+            linksIdx = -1
+            for i in range(len(self.metadata['links'][idx])):
+                if self.metadata['links'][idx][i] == linkContent:
+                    linksIdx = i
+            if linksIdx != -1:
+                #remove the link
+                self.metadata['links'][idx].pop(linksIdx)
+            else:
+                print("MetadataParser: delete() unable to delete the link.")
+        else:
+            print("MetadataParser: delete() unable to delete the link.")
     def createMetadata(self, path,file):
         #create the metadata file
         if os.path.isdir(path):

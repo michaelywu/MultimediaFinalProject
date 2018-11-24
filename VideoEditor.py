@@ -105,14 +105,6 @@ class HyperlinkLabel(QLabel):
             qp.setBrush(br)
             qp.drawRect(QRect(self.begin, self.end))
 
-            #if self.parent.src_image_idx in self.parent.currentLink:
-            #    self.begin = QPoint( self.parent.currentLink[self.parent.src_image_idx][0],self.parent.currentLink[self.parent.src_image_idx][1])
-            #    self.end = QPoint(self.parent.currentLink[self.parent.src_image_idx][0]+self.parent.currentLink[self.parent.src_image_idx][2],self.parent.currentLink[self.parent.src_image_idx][1]+self.parent.currentLink[self.parent.src_image_idx][3])
-                #self.update()
-                #print(self.begin.x())
-                #print(self.begin.y())
-                #print(self.end.x())
-                #print(self.end.y())
     def clearLink(self):
         self.begin = QPoint()
         self.end = QPoint()
@@ -174,11 +166,15 @@ class VideoEditor(QMainWindow):
         self.imageHeight = C_LENGTH
         self.linkCreationActive = False
         self.destVideoLoaded = False
+        self.linkNames = []
         #these are used during hyperlink creation
         # currentLink key = frame num, returns [x,y,xLength,yLength]
         # currentFrame is the main frame number to start the link
         self.currentLink = {}
         self.currentFrame = []
+        #this dict will be accessed when links need to be deleted
+        self.links = {}
+        self.linksIdx = {} #link name key returns the idx
         self.metadata = MetadataParser.MetadataParser()
 
         self.srcPositionSlider = QSlider(Qt.Horizontal)
@@ -227,16 +223,16 @@ class VideoEditor(QMainWindow):
         #self.srcImageLabel = QLabel(self)
         self.srcImageLabel = HyperlinkLabel(self)
         #self.srcImageLabel.mousePressEvent = self.mousePress
-        self.srcImageLabel.setFrameShape(QFrame.Panel)
-        self.srcImageLabel.setLineWidth(1)
+        #self.srcImageLabel.setFrameShape(QFrame.Panel)
+        #self.srcImageLabel.setLineWidth(1)
         self.srcImageLabel.setSizePolicy( QSizePolicy.Fixed, QSizePolicy.Fixed )
         self.srcImageLabel.setMinimumHeight(self.imageHeight)
         self.srcImageLabel.setMinimumWidth(self.imageWidth)
 
         #Destination image label
         self.destImageLabel = QLabel(self)
-        self.destImageLabel.setFrameShape(QFrame.Panel)
-        self.destImageLabel.setLineWidth(1)
+        #self.destImageLabel.setFrameShape(QFrame.Panel)
+        #self.destImageLabel.setLineWidth(1)
         self.destImageLabel.setSizePolicy( QSizePolicy.Fixed, QSizePolicy.Fixed )
         self.destImageLabel.setMinimumHeight(self.imageHeight)
         self.destImageLabel.setMinimumWidth(self.imageWidth)
@@ -256,10 +252,15 @@ class VideoEditor(QMainWindow):
         self.linkComboBox = QComboBox(self)
         self.deleteLinkButton = QPushButton('Delete Link', self)
         self.deleteLinkButton.clicked.connect(self.deleteLinkClicked)
+        self.deleteLinkButton.setEnabled(False)
+
+        self.linkNameLabel = QLabel(self)
+        self.linkNameLabel.setText("Link Name:")
+        self.linkNameLineEdit = QLineEdit(self)
 
         #status label
-        self.statusLabel = QLabel(self)
-        self.statusLabel.setText("Status:")
+        #self.statusLabel = QLabel(self)
+        #self.statusLabel.setText("Status:")
 
         #lineedit for filename
         self.filenameLabel = QLabel()
@@ -273,16 +274,25 @@ class VideoEditor(QMainWindow):
 
         self.window = QWidget()
 
-        self.mainLayout = QHBoxLayout()
+        self.mainLayout = QVBoxLayout()
         self.srcLayout = QVBoxLayout()
         self.destLayout = QVBoxLayout()
         self.srcButtonLayout = QHBoxLayout()
         self.destButtonLayout = QHBoxLayout()
         self.srcButtonLayout2 = QHBoxLayout()
         self.destButtonLayout2 = QHBoxLayout()
+        self.srcButtonLayout3 = QHBoxLayout()
+        self.destButtonLayout3 = QHBoxLayout()
+        self.imgLayout = QHBoxLayout()
+        self.sliderLayout = QHBoxLayout()
+        self.frameNumLayout = QHBoxLayout()
+        self.buttonsLayout = QHBoxLayout()
 
-        self.srcButtonLayout2.addWidget(self.deleteLinkButton)
-        self.srcButtonLayout2.addWidget(self.linkComboBox)
+        self.srcButtonLayout3.addWidget(self.linkNameLabel)
+        self.srcButtonLayout3.addWidget(self.linkNameLineEdit)
+
+        self.destButtonLayout3.addWidget(self.deleteLinkButton)
+        self.destButtonLayout3.addWidget(self.linkComboBox)
         self.destButtonLayout2.addWidget(self.filenameLabel)
         self.destButtonLayout2.addWidget(self.filenameLineEdit)
 
@@ -293,28 +303,35 @@ class VideoEditor(QMainWindow):
         self.destButtonLayout.addWidget(self.defineLinkButton)
         self.destButtonLayout.addWidget(self.saveButton)
 
-        self.destLayout.addWidget(self.statusLabel)
+        #self.destLayout.addWidget(self.statusLabel)
+        self.destLayout.addLayout(self.destButtonLayout3)
         self.destLayout.addLayout(self.destButtonLayout2)
-        self.srcLayout.addLayout(self.srcButtonLayout2)
+        #self.srcLayout.addLayout(self.srcButtonLayout2)
+        self.srcLayout.addLayout(self.srcButtonLayout3)
 
         self.destLayout.addLayout(self.destButtonLayout)
         self.srcLayout.addLayout(self.srcButtonLayout)
 
-        self.srcLayout.addWidget(self.srcImageLabel)
-        self.destLayout.addWidget(self.destImageLabel)
+        self.imgLayout.addWidget(self.srcImageLabel)
+        self.imgLayout.addWidget(self.destImageLabel)
 
-        self.srcLayout.addWidget(self.srcPositionSlider)
-        self.destLayout.addWidget(self.destPositionSlider)
+        self.sliderLayout.addWidget(self.srcPositionSlider)
+        self.sliderLayout.addWidget(self.destPositionSlider)
 
-        self.srcLayout.addWidget(self.srcImageIndexLabel)
-        self.destLayout.addWidget(self.destImageIndexLabel)
+        self.frameNumLayout.addWidget(self.srcImageIndexLabel)
+        self.frameNumLayout.addWidget(self.destImageIndexLabel)
 
         self.srcLayout.setAlignment(Qt.AlignCenter)
         self.destLayout.setAlignment(Qt.AlignCenter)
         #self.mainLayout.setAlignment(Qt.AlignCenter)
+        self.buttonsLayout.addLayout(self.srcLayout)
+        self.buttonsLayout.addLayout(self.destLayout)
 
-        self.mainLayout.addLayout(self.srcLayout)
-        self.mainLayout.addLayout(self.destLayout)
+        self.mainLayout.addLayout(self.buttonsLayout)
+        self.mainLayout.addLayout(self.imgLayout)
+        self.mainLayout.addLayout(self.sliderLayout)
+        self.mainLayout.addLayout(self.frameNumLayout)
+
         self.window.setLayout(self.mainLayout)
 
         self.setCentralWidget(self.window)
@@ -332,6 +349,15 @@ class VideoEditor(QMainWindow):
             print("Invalid frame length value.")
             return
 
+        #check if the link name is valid
+        linkName = self.linkNameLineEdit.text()
+        if linkName == '':
+            print("Please fill in a name.")
+            return
+        #check if the link name is already existing
+        if linkName in self.linkNames:
+            print("Existing link name.")
+            return
         #reset this data structure
         self.currentLink = {}
         self.currentFrame = []
@@ -341,6 +367,7 @@ class VideoEditor(QMainWindow):
             self.frameLength.setEnabled(False)
             self.defineLinkButton.setEnabled(True)
             self.saveButton.setEnabled(False)
+            self.linkNameLineEdit.setEnabled(False)
             self.linkCreationActive = True
             #initiate the link to a default position
             self.srcImageLabel.setPosition(int((C_WIDTH/2.0)-15),int((C_LENGTH/2.0)-15),30,30)
@@ -357,13 +384,16 @@ class VideoEditor(QMainWindow):
             for idx in range(self.srcPositionSlider.value(),end+1):
                 self.currentLink[idx] = [x,y,xLen,yLen]
             self.currentFrame.append(self.srcPositionSlider.value())
-
+            self.deleteLinkButton.setEnabled(False)
+            self.filenameLineEdit.setEnabled(False)
+            self.linkComboBox.setEnabled(False)
         else:
             #if hyperlink mode on, reset to viewing mode
             self.createLinkButton.setText('Create Hyperlink')
             self.frameLength.setEnabled(True)
             self.defineLinkButton.setEnabled(False)
-            self.saveButton.setEnabled(True)
+            #self.saveButton.setEnabled(True)
+            self.linkNameLineEdit.setEnabled(True)
             self.linkCreationActive = False
             #remove the rectangle link
             self.srcImageLabel.setPosition(0,0,0,0)
@@ -372,6 +402,15 @@ class VideoEditor(QMainWindow):
             self.currentLink = {}
             self.currentFrame = []
             self.srcPositionSlider.setRange(0, len(self.src_rgb_files) - 1)
+
+            self.filenameLineEdit.setEnabled(True)
+            self.linkComboBox.setEnabled(True)
+            if len(self.links.keys()) == 0:
+                self.saveButton.setEnabled(False)
+                self.deleteLinkButton.setEnabled(False)
+            else:
+                self.saveButton.setEnabled(True)
+                self.deleteLinkButton.setEnabled(True)
     def defineLinkClicked(self):
         #when the define link button is clicked
         print("defineLinkClicked() entered")
@@ -394,20 +433,36 @@ class VideoEditor(QMainWindow):
                     startFrameIdx = self.currentFrame[mainFrameIdx]
                     #[x1,y1,xLength,yLength,start frame #, end frame #, vid_dest, vid_dest start frame#]
                     self.metadata.addLink(idx,[self.currentLink[self.currentFrame[mainFrameIdx]][0],self.currentLink[self.currentFrame[mainFrameIdx]][1],self.currentLink[self.currentFrame[mainFrameIdx]][2],self.currentLink[self.currentFrame[mainFrameIdx]][3],startFrameIdx,endFrameIdx,destIdx,destFrame])
+
+                    #add the link to the links dict
+                    if self.linkNameLineEdit.text() in self.links:
+                        self.links[self.linkNameLineEdit.text()].append([self.currentLink[self.currentFrame[mainFrameIdx]][0],self.currentLink[self.currentFrame[mainFrameIdx]][1],self.currentLink[self.currentFrame[mainFrameIdx]][2],self.currentLink[self.currentFrame[mainFrameIdx]][3],startFrameIdx,endFrameIdx,destIdx,destFrame])
+                    else:
+                        self.links[self.linkNameLineEdit.text()] = []
+                        self.links[self.linkNameLineEdit.text()].append([self.currentLink[self.currentFrame[mainFrameIdx]][0],self.currentLink[self.currentFrame[mainFrameIdx]][1],self.currentLink[self.currentFrame[mainFrameIdx]][2],self.currentLink[self.currentFrame[mainFrameIdx]][3],startFrameIdx,endFrameIdx,destIdx,destFrame])
+
+                    if self.linkNameLineEdit.text() not in self.linksIdx:
+                        self.linksIdx[self.linkNameLineEdit.text()] = idx
                 else:
                     print("defineLinkClicked() ERROR CANNOT LOADED A MAIN FRAME.")
             print(self.metadata.metadata)
+            #add the item to the combobox
+            self.linkNames.append(self.linkNameLineEdit.text())
+            self.linkComboBox.addItem(self.linkNames[-1])
             #this button click will also kick out of hyperlink creation mode
             self.createLinkButton.setText('Create Hyperlink')
             self.frameLength.setEnabled(True)
             self.defineLinkButton.setEnabled(False)
             self.saveButton.setEnabled(True)
+            self.deleteLinkButton.setEnabled(True)
+            self.linkNameLineEdit.setEnabled(True)
             self.linkCreationActive = False
             #remove the rectangle link
             self.srcImageLabel.setPosition(0,0,0,0)
             self.srcImageLabel.setLink(False)
             self.srcImageLabel.clearLink()
-
+            self.filenameLineEdit.setEnabled(True)
+            self.linkComboBox.setEnabled(True)
             self.currentLink = {}
             self.currentFrame = []
 
@@ -455,6 +510,36 @@ class VideoEditor(QMainWindow):
     def deleteLinkClicked(self):
         # When the delete link button is click
         print("deleteLinkClicked() entered")
+        print(self.metadata.metadata)
+        print(self.links)
+        print(self.linksIdx)
+        #check the combo box value and see if it is valid
+        linkNameToDelete = str(self.linkComboBox.currentText())
+        if linkNameToDelete in self.linkNames:
+            #delete the following link in the data structure
+            if linkNameToDelete in self.links:
+                for linkList in self.links[linkNameToDelete]:
+                    self.metadata.deleteLink(self.linksIdx[linkNameToDelete],linkList)
+                self.links.pop(linkNameToDelete)
+                self.linksIdx.pop(linkNameToDelete)
+            else:
+                print("deleteLinkClicked() linkNameToDelete not in self.linkNames")
+
+        else:
+            print("deleteLinkClicked() linkNameToDelete not in self.linkNames")
+            return
+        #remove it from the combo box value
+        self.linkComboBox.clear() #delete all items
+        self.linkNames.remove(linkNameToDelete)
+        self.linkComboBox.addItems(self.linkNames)
+        #turn off save file if there are no links present to save
+        if len(self.links.keys()) == 0:
+            self.saveButton.setEnabled(False)
+            self.deleteLinkButton.setEnabled(False)
+        print("AFTER")
+        print(self.metadata.metadata)
+        print(self.links)
+        print(self.linksIdx)
     def setSrcPosition(self):
         #print("setSrcPosition() called")
         #print(self.srcPositionSlider.value())
